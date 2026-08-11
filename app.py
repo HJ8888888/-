@@ -15,7 +15,8 @@ def get_global_game_state():
         "answers": {},             # 제출 답안
         "scores": {},              # 참가자 점수
         "timer_sec": 15,           # 문제당 제한 시간 (초)
-        "q_start_time": 0          # 문제 시작 시각
+        "q_start_time": 0,         # 문제 시작 시각
+        "participants": []         # 👥 접속한 참가자 명단
     }
 
 game = get_global_game_state()
@@ -111,56 +112,65 @@ if role == "🎙️ 진행자 (Host)":
 
     st.divider()
 
-    # --- 진행 제어 ---
-    st.subheader("🚀 라이브 진행 제어")
-    if st.button("▶️ 게임 시작 / 다음 문제 넘어가기"):
-        if not game["questions"]:
-            st.warning("먼저 문제를 등록해 주세요!")
-        else:
-            if game["status"] == "waiting":
-                game["status"] = "playing"
-                game["current_question"] = 0
-            elif game["status"] == "playing":
-                if game["current_question"] < len(game["questions"]) - 1:
-                    game["current_question"] += 1
-                else:
-                    # 종료 및 채점
-                    game["status"] = "ended"
-                    scores = {}
-                    for q_idx, q_data in enumerate(game["questions"]):
-                        user_ans_dict = game["answers"].get(q_idx, {})
-                        correct_ans_num = q_data["ans"]
-                        for nick, selected_option in user_ans_dict.items():
-                            if selected_option.startswith(correct_ans_num):
-                                scores[nick] = scores.get(nick, 0) + 1
-                            else:
-                                scores[nick] = scores.get(nick, 0)
-                    game["scores"] = scores
-            
-            # 문제 시작 타이머 시각 저장
-            game["q_start_time"] = time.time()
-            st.rerun()
-
-    # --- 현재 진행 화면 ---
-    if game["status"] == "playing" and game["questions"]:
-        st.divider()
-        q_data = game["questions"][game["current_question"]]
-        st.header(f"📢 Q{game['current_question']+1}. {q_data['q']}")
-        for opt in q_data["options"]:
-            st.subheader(f"  {opt}")
+    # --- 실시간 접속자 및 진행 제어판 (2초 자동 갱신) ---
+    @st.fragment(run_every="2s")
+    def show_host_dashboard():
+        st.subheader("🚀 라이브 진행 제어")
         
-        curr_q = game["current_question"]
-        submits = game["answers"].get(curr_q, {})
-        st.info(f"👥 현재 정답 제출인원: **{len(submits)}명**")
+        # 👥 실시간 참가자 명단 띄우기
+        p_count = len(game["participants"])
+        st.info(f"👥 **현재 입장한 참가자 ({p_count}명):** " + (", ".join([f"`{p}`" for p in game["participants"]]) if game["participants"] else "아직 입장한 참가자가 없습니다."))
+        
+        if st.button("▶️ 게임 시작 / 다음 문제 넘어가기"):
+            if not game["questions"]:
+                st.warning("먼저 문제를 등록해 주세요!")
+            else:
+                if game["status"] == "waiting":
+                    game["status"] = "playing"
+                    game["current_question"] = 0
+                elif game["status"] == "playing":
+                    if game["current_question"] < len(game["questions"]) - 1:
+                        game["current_question"] += 1
+                    else:
+                        # 종료 및 채점
+                        game["status"] = "ended"
+                        scores = {}
+                        for q_idx, q_data in enumerate(game["questions"]):
+                            user_ans_dict = game["answers"].get(q_idx, {})
+                            correct_ans_num = q_data["ans"]
+                            for nick, selected_option in user_ans_dict.items():
+                                if selected_option.startswith(correct_ans_num):
+                                    scores[nick] = scores.get(nick, 0) + 1
+                                else:
+                                    scores[nick] = scores.get(nick, 0)
+                        game["scores"] = scores
+                
+                # 문제 시작 타이머 시각 저장
+                game["q_start_time"] = time.time()
+                st.rerun()
 
-    elif game["status"] == "ended":
-        st.divider()
-        st.header("🏆 최종 결과 TOP 5 리더보드")
-        if game["scores"]:
-            sorted_scores = sorted(game["scores"].items(), key=lambda x: x[1], reverse=True)[:5]
-            for rank, (nick, score) in enumerate(sorted_scores, 1):
-                icon = "🥇" if rank==1 else "🥈" if rank==2 else "🥉" if rank==3 else "🏅"
-                st.subheader(f"{icon} **{rank}위**: {nick} — {score}점 / {len(game['questions'])}점 만점")
+        # --- 현재 진행 화면 ---
+        if game["status"] == "playing" and game["questions"]:
+            st.divider()
+            q_data = game["questions"][game["current_question"]]
+            st.header(f"📢 Q{game['current_question']+1}. {q_data['q']}")
+            for opt in q_data["options"]:
+                st.subheader(f"  {opt}")
+            
+            curr_q = game["current_question"]
+            submits = game["answers"].get(curr_q, {})
+            st.success(f"✍️ 정답 제출 완료 인원: **{len(submits)}명 / {p_count}명**")
+
+        elif game["status"] == "ended":
+            st.divider()
+            st.header("🏆 최종 결과 TOP 5 리더보드")
+            if game["scores"]:
+                sorted_scores = sorted(game["scores"].items(), key=lambda x: x[1], reverse=True)[:5]
+                for rank, (nick, score) in enumerate(sorted_scores, 1):
+                    icon = "🥇" if rank==1 else "🥈" if rank==2 else "🥉" if rank==3 else "🏅"
+                    st.subheader(f"{icon} **{rank}위**: {nick} — {score}점 / {len(game['questions'])}점 만점")
+
+    show_host_dashboard()
 
 # ---------------------------------------------------------
 # 📱 참가자 (Participant) 화면
@@ -170,10 +180,14 @@ else:
     nickname = st.text_input("사용할 닉네임을 입력하세요", key="user_nick")
     
     if nickname:
+        # 참가자 들어오면 전역 명단에 추가
+        if nickname not in game["participants"]:
+            game["participants"].append(nickname)
+            
         @st.fragment(run_every="1s")
         def show_quiz_for_user():
             if game["status"] == "waiting":
-                st.info("⏳ 진행자가 게임을 시작하길 기다리고 있습니다...")
+                st.info(f"⏳ **{nickname}**님 환영합니다! 진행자가 게임을 시작하길 기다리고 있습니다...")
             
             elif game["status"] == "playing":
                 curr_q = game["current_question"]
