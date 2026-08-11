@@ -3,7 +3,7 @@ import pandas as pd
 import time
 from google import genai
 
-st.set_page_config(page_title="라이브 엑셀 & AI 퀴즈 챌린지", layout="wide")
+st.set_page_config(page_title="라이브 퀴즈 챌린지 (객관식 & 주관식)", layout="wide")
 
 # 1. 전역 게임 상태 공유 (서버 저장소)
 @st.cache_resource
@@ -38,54 +38,89 @@ if role == "🎙️ 진행자 (Host)":
     # --- 탭 1: 엑셀 파일 업로드 ---
     with tab1:
         st.subheader("📁 엑셀(.xlsx) 파일로 문제 등록")
-        st.info("💡 엑셀 첫 번째 행(열 이름)은 반드시 `문제`, `보기1`, `보기2`, `보기3`, `보기4`, `정답` 으로 작성해 주세요! (정답은 1~4 숫자)")
+        st.info("""
+        💡 **엑셀 작성 팁**
+        - **주관식 문제**: `문제`, `정답` 열 2개만 적으시면 됩니다.
+        - **객관식 문제**: `문제`, `보기1`, `보기2`, `보기3`, `보기4`, `정답` 열을 적으시면 됩니다.
+        *(한 엑셀 파일 안에 주관식과 객관식을 섞어서 작성하셔도 좋습니다!)*
+        """)
         
-        uploaded_file = st.file_uploader("엑셀 또는 CSV 파일을 선택하세요", type=["xlsx", "csv"])
+        uploaded_file = st.file_uploader("엑셀 또는 CSV 파일 선택", type=["xlsx", "csv"])
         if uploaded_file is not None:
             try:
-                if uploaded_file.name.endswith(".csv"):
-                    df = pd.read_csv(uploaded_file)
-                else:
-                    df = pd.read_excel(uploaded_file)
-                
+                df = pd.read_csv(uploaded_file) if uploaded_file.name.endswith(".csv") else pd.read_excel(uploaded_file)
                 st.write("📋 미리보기:", df.head())
                 
                 if st.button("📊 이 엑셀 파일로 문제 등록하기"):
                     parsed_questions = []
                     for _, row in df.iterrows():
-                        parsed_questions.append({
-                            "q": str(row["문제"]),
-                            "options": [
-                                f"1. {row['보기1']}",
-                                f"2. {row['보기2']}",
-                                f"3. {row['보기3']}",
-                                f"4. {row['보기4']}"
-                            ],
-                            "ans": str(int(row["정답"]))
-                        })
+                        q_text = str(row["문제"]).strip()
+                        ans_text = str(row["정답"]).strip()
+                        
+                        # 보기1 열이 있고 값이 비어있지 않으면 객관식
+                        is_obj = "보기1" in df.columns and pd.notna(row.get("보기1"))
+                        
+                        if is_obj:
+                            parsed_questions.append({
+                                "q": q_text,
+                                "type": "objective",
+                                "options": [
+                                    f"1. {row['보기1']}",
+                                    f"2. {row['보기2']}",
+                                    f"3. {row['보기3']}",
+                                    f"4. {row['보기4']}"
+                                ],
+                                "ans": str(int(float(ans_text))) if ans_text.isdigit() or ans_text.replace('.','',1).isdigit() else ans_text
+                            })
+                        else:
+                            parsed_questions.append({
+                                "q": q_text,
+                                "type": "subjective",
+                                "options": [],
+                                "ans": ans_text
+                            })
                     
                     game["questions"] = parsed_questions
                     game["current_question"] = 0
                     game["status"] = "waiting"
                     game["answers"] = {}
                     game["scores"] = {}
-                    st.success(f"🎉 총 {len(parsed_questions)}개의 엑셀 문제가 준비되었습니다!")
+                    st.success(f"🎉 총 {len(parsed_questions)}개의 문제가 준비되었습니다!")
             except Exception as e:
-                st.error(f"파일을 읽는 중 오류가 발생했습니다. 열 이름을 확인해주세요! ({e})")
+                st.error(f"오류가 발생했습니다. 열 이름을 확인해주세요! ({e})")
 
     # --- 탭 2: 직접 입력 ---
     with tab2:
         st.subheader("내가 원하는 문제 직접 입력")
-        default_sample = "대한민국의 수도는? | 부산, 인천, 서울, 대구 | 3"
-        q_text = st.text_area("문제 | 보기1, 보기2, 보기3, 보기4 | 정답번호", value=default_sample, height=100)
+        st.caption("주관식 형식: `문제 | 정답`  /  객관식 형식: `문제 | 보기1, 보기2, 보기3, 보기4 | 정답번호`")
+        default_sample = (
+            "대한민국의 수도는? | 서울\n"
+            "파이썬의 개발자는? | 귀도 반 로섬\n"
+            "AI의 약자는? | Apple Ice, Artificial Intelligence, Auto Internet, Action Item | 2"
+        )
+        q_text = st.text_area("문제 입력:", value=default_sample, height=120)
         
         if st.button("📝 텍스트 문제 등록하기"):
             parsed_questions = []
             for line in q_text.strip().split("\n"):
                 parts = line.split("|")
-                if len(parts) == 3:
+                if len(parts) == 2:
+                    # 주관식
+                    parsed_questions.append({
+                        "q": parts[0].strip(),
+                        "type": "subjective",
+                        "options": [],
+                        "ans": parts[1].strip()
+                    })
+                elif len(parts) == 3:
+                    # 객관식
                     opts = [f"{i+1}. {opt.strip()}" for i, opt in enumerate(parts[1].split(","))]
-                    parsed_questions.append({"q": parts[0].strip(), "options": opts, "ans": parts[2].strip()})
+                    parsed_questions.append({
+                        "q": parts[0].strip(),
+                        "type": "objective",
+                        "options": opts,
+                        "ans": parts[2].strip()
+                    })
             if parsed_questions:
                 game["questions"] = parsed_questions
                 game["current_question"] = 0
@@ -96,28 +131,27 @@ if role == "🎙️ 진행자 (Host)":
 
     # --- 탭 3: AI 생성 ---
     with tab3:
-        st.subheader("AI에게 문제 생성 맡기기")
+        st.subheader("AI에게 주관식 문제 생성 맡기기")
         api_key = st.text_input("Gemini API Key", type="password")
         topic = st.text_input("퀴즈 주제", "일반 상식")
-        if st.button("✨ AI 문제 준비"):
+        if st.button("✨ AI 주관식 문제 준비"):
             game["questions"] = [
-                {"q": "Q1. AI의 약자는 무엇일까요?", "options": ["1. Apple Ice", "2. Artificial Intelligence", "3. Auto Internet", "4. Action Item"], "ans": "2"},
-                {"q": "Q2. 대표적인 생성형 AI 모델 Gemini를 만든 기업은?", "options": ["1. Google", "2. Apple", "3. Microsoft", "4. Meta"], "ans": "1"}
+                {"q": "Q1. 대한민국의 수도는 어디일까요?", "type": "subjective", "options": [], "ans": "서울"},
+                {"q": "Q2. 파이썬을 개발한 인물의 이름은?", "type": "subjective", "options": [], "ans": "귀도 반 로섬"},
+                {"q": "Q3. AI의 약자 중 첫 번째 단어인 'A'는 무엇의 줄임말일까요?", "type": "subjective", "options": [], "ans": "Artificial"}
             ]
             game["current_question"] = 0
             game["status"] = "waiting"
             game["answers"] = {}
             game["scores"] = {}
-            st.success("AI 문제 준비 완료!")
+            st.success("AI 주관식 문제 준비 완료!")
 
     st.divider()
 
-    # --- 실시간 접속자 및 진행 제어판 (2초 자동 갱신) ---
+    # --- 실시간 진행 제어 ---
     @st.fragment(run_every="2s")
     def show_host_dashboard():
         st.subheader("🚀 라이브 진행 제어")
-        
-        # 👥 실시간 참가자 명단 띄우기
         p_count = len(game["participants"])
         st.info(f"👥 **현재 입장한 참가자 ({p_count}명):** " + (", ".join([f"`{p}`" for p in game["participants"]]) if game["participants"] else "아직 입장한 참가자가 없습니다."))
         
@@ -132,30 +166,46 @@ if role == "🎙️ 진행자 (Host)":
                     if game["current_question"] < len(game["questions"]) - 1:
                         game["current_question"] += 1
                     else:
-                        # 종료 및 채점
+                        # 종료 및 채점 (스마트 주관식/객관식 채점)
                         game["status"] = "ended"
                         scores = {}
                         for q_idx, q_data in enumerate(game["questions"]):
                             user_ans_dict = game["answers"].get(q_idx, {})
-                            correct_ans_num = q_data["ans"]
-                            for nick, selected_option in user_ans_dict.items():
-                                if selected_option.startswith(correct_ans_num):
-                                    scores[nick] = scores.get(nick, 0) + 1
+                            correct_ans = str(q_data["ans"]).strip()
+                            q_type = q_data.get("type", "objective")
+                            
+                            for nick, user_ans in user_ans_dict.items():
+                                user_ans_clean = str(user_ans).strip()
+                                if q_type == "objective":
+                                    if user_ans_clean.startswith(correct_ans):
+                                        scores[nick] = scores.get(nick, 0) + 1
+                                    else:
+                                        scores[nick] = scores.get(nick, 0)
                                 else:
-                                    scores[nick] = scores.get(nick, 0)
+                                    # 주관식: 띄어쓰기, 대소문자 무시 스마트 채점
+                                    norm_user = user_ans_clean.replace(" ", "").lower()
+                                    norm_corr = correct_ans.replace(" ", "").lower()
+                                    if norm_user == norm_corr:
+                                        scores[nick] = scores.get(nick, 0) + 1
+                                    else:
+                                        scores[nick] = scores.get(nick, 0)
                         game["scores"] = scores
                 
-                # 문제 시작 타이머 시각 저장
                 game["q_start_time"] = time.time()
                 st.rerun()
 
-        # --- 현재 진행 화면 ---
+        # --- 현재 문제 화면 ---
         if game["status"] == "playing" and game["questions"]:
             st.divider()
             q_data = game["questions"][game["current_question"]]
-            st.header(f"📢 Q{game['current_question']+1}. {q_data['q']}")
-            for opt in q_data["options"]:
-                st.subheader(f"  {opt}")
+            q_type_str = "주관식" if q_data.get("type") == "subjective" else "객관식"
+            st.header(f"📢 Q{game['current_question']+1} [{q_type_str}]. {q_data['q']}")
+            
+            if q_data.get("type") == "objective":
+                for opt in q_data["options"]:
+                    st.subheader(f"  {opt}")
+            else:
+                st.info(f"💡 정답: `{q_data['ans']}` (진행자 전용 정답 확인)")
             
             curr_q = game["current_question"]
             submits = game["answers"].get(curr_q, {})
@@ -180,7 +230,6 @@ else:
     nickname = st.text_input("사용할 닉네임을 입력하세요", key="user_nick")
     
     if nickname:
-        # 참가자 들어오면 전역 명단에 추가
         if nickname not in game["participants"]:
             game["participants"].append(nickname)
             
@@ -193,23 +242,32 @@ else:
                 curr_q = game["current_question"]
                 q_data = game["questions"][curr_q]
                 
-                # 타이머 계산
                 elapsed = time.time() - game.get("q_start_time", time.time())
                 limit = game.get("timer_sec", 15)
                 time_left = max(0, int(limit - elapsed))
                 
-                st.subheader(f"문제 {curr_q + 1}. {q_data['q']}")
+                q_type = q_data.get("type", "objective")
+                q_type_str = "주관식" if q_type == "subjective" else "객관식"
                 
-                # 실시간 남은 시간 타이머 바
+                st.subheader(f"문제 {curr_q + 1} [{q_type_str}]. {q_data['q']}")
+                
                 if time_left > 0:
                     st.progress(time_left / limit, text=f"⏱️ 남은 시간: **{time_left}초**")
-                    user_ans = st.radio("정답을 선택하세요:", q_data["options"], key=f"ans_{curr_q}")
+                    
+                    # 객관식/주관식 모드에 따른 입력창 스위칭
+                    if q_type == "objective":
+                        user_ans = st.radio("정답을 선택하세요:", q_data["options"], key=f"ans_{curr_q}")
+                    else:
+                        user_ans = st.text_input("정답을 입력하세요 (주관식):", key=f"ans_{curr_q}")
                     
                     if st.button("정답 제출하기", key=f"btn_{curr_q}"):
-                        if curr_q not in game["answers"]:
-                            game["answers"][curr_q] = {}
-                        game["answers"][curr_q][nickname] = user_ans
-                        st.success("답안 제출 완료! 시간 종료 또는 다음 문제를 기다려주세요.")
+                        if not user_ans:
+                            st.warning("정답을 입력한 뒤 제출해주세요!")
+                        else:
+                            if curr_q not in game["answers"]:
+                                game["answers"][curr_q] = {}
+                            game["answers"][curr_q][nickname] = user_ans
+                            st.success("답안 제출 완료! 다음 문제를 기다려주세요.")
                 else:
                     st.error("⏰ 제한 시간이 종료되었습니다! 더 이상 답안을 제출할 수 없습니다.")
             
