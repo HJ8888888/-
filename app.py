@@ -521,8 +521,16 @@ else:
             
         elif game["status"] == "running":
             curr_q = game["curr_q"]
+            st.session_state["rendered_q"] = curr_q
+            st.session_state["rendered_status"] = game["status"]
+
             if curr_q >= len(game["questions"]):
                 st.write("모든 문제가 끝났습니다. 진행자의 안내를 기다려주세요.")
+                @st.fragment(run_every="1s")
+                def end_wait_fragment():
+                    if game["status"] != "running" or game["curr_q"] != curr_q:
+                        st.rerun()
+                end_wait_fragment()
             else:
                 q_data = game["questions"][curr_q]
                 q_type = q_data["type"]
@@ -538,9 +546,13 @@ else:
                 q_answers = game["answers"].setdefault(curr_q, {})
                 prev_sub = q_answers.get(nickname, None)
                 
-                # Timer Fragment
+                # Timer & Auto-Sync Fragment
                 @st.fragment(run_every="1s")
                 def participant_timer_fragment():
+                    # Check if host moved to next question or changed game status
+                    if st.session_state.get("rendered_q") != game["curr_q"] or st.session_state.get("rendered_status") != game["status"]:
+                        st.rerun()
+
                     e = time.time() - game.get("q_start_time", time.time())
                     t_left = max(0, int(limit - e))
                     st.markdown(f"<div class='timer-badge'>⏱️ 남은 시간: {t_left} 초</div>", unsafe_allow_html=True)
