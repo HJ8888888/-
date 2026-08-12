@@ -64,6 +64,7 @@ st.markdown("""
         border-radius: 30px;
         display: inline-block;
         border: 2px solid #F8C8D4;
+        margin-bottom: 10px;
     }
 
     .stat-card-correct {
@@ -105,8 +106,8 @@ def get_global_game():
         "questions": [],
         "answers": {},              # {q_idx: {nickname: choice_list_or_str}}
         "participants": [],         # list of nicknames
-        "timer_sec_obj": 15,        # 객관식 시간초
-        "timer_sec_subj": 30        # 주관식 시간초
+        "timer_sec_obj": 15,        # 객관식 시간초 기본값
+        "timer_sec_subj": 30        # 주관식 시간초 기본값
     }
 
 game = get_global_game()
@@ -236,7 +237,7 @@ if mode == "진행자 모드 (Host)":
             with col_ctrl1:
                 st.subheader("🎯 Quiz 진행 상태")
                 
-                # 비상 초기화 버튼 (언제든 대기 상태로 강제 전환)
+                # 비상 초기화 버튼
                 if game["status"] != "waiting":
                     if st.button("🔄 게임 강제 대기 상태로 리셋 (시작버튼 다시 복구)", help="게임 상태를 처음 대기 상태로 되돌립니다."):
                         game["status"] = "waiting"
@@ -266,7 +267,10 @@ if mode == "진행자 모드 (Host)":
                     else:
                         q_data = game["questions"][curr_q]
                         q_type = q_data["type"]
-                        limit = q_data.get("timer") or (game["timer_sec_subj"] if q_type == "subjective" else game["timer_sec_obj"])
+                        
+                        # Dynamic Limit Calculation
+                        def_limit = game["timer_sec_subj"] if q_type == "subjective" else game["timer_sec_obj"]
+                        limit = q_data.get("timer") if (q_data.get("timer") is not None) else def_limit
                         
                         elapsed = time.time() - game.get("q_start_time", time.time())
                         time_left = max(0, int(limit - elapsed))
@@ -276,23 +280,34 @@ if mode == "진행자 모드 (Host)":
                             for idx, opt in enumerate(q_data["options"], start=1):
                                 st.write(f"**{opt}**")
                         
-                        st.markdown(f"<div class='timer-badge'>⏱️ 남은 시간: {time_left} 초</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div class='timer-badge'>⏱️ 남은 시간: {time_left} 초 (설정 제한시간: {limit}초)</div>", unsafe_allow_html=True)
                         
+                        # Live Timer Control Buttons
+                        col_t1, col_t2, col_t3 = st.columns(3)
+                        with col_t1:
+                            if st.button("➕ 10초 연장", key=f"add10_{curr_q}", use_container_width=True):
+                                q_data["timer"] = limit + 10
+                                st.rerun()
+                        with col_t2:
+                            if st.button("➖ 10초 단축", key=f"sub10_{curr_q}", use_container_width=True):
+                                q_data["timer"] = max(5, limit - 10)
+                                st.rerun()
+                        with col_t3:
+                            if st.button("⏱️ 타이머 처음부터 다시 시작", key=f"reset_t_{curr_q}", use_container_width=True):
+                                game["q_start_time"] = time.time()
+                                st.rerun()
+
                         submits = game["answers"].get(curr_q, {})
                         st.write(f"📊 **현재 제출 인원:** {len(submits)} / {len(game['participants'])} 명")
                         
                         st.markdown("---")
-                        col_h1, col_h2, col_h3 = st.columns(3)
+                        col_h1, col_h2 = st.columns(2)
                         with col_h1:
                             if st.button("⬅️ 이전 문제", use_container_width=True, disabled=(curr_q == 0)):
                                 game["curr_q"] -= 1
                                 game["q_start_time"] = time.time()
                                 st.rerun()
                         with col_h2:
-                            if st.button("⏱️ 타이머 리셋", use_container_width=True):
-                                game["q_start_time"] = time.time()
-                                st.rerun()
-                        with col_h3:
                             if curr_q < len(game["questions"]) - 1:
                                 if st.button("➡️ 다음 문제", use_container_width=True):
                                     game["curr_q"] += 1
@@ -337,12 +352,19 @@ if mode == "진행자 모드 (Host)":
         # TAB 2: 문제 관리 & 설정
         # --------------------------------------
         with tabs[1]:
-            st.subheader("⏱️ 유형별 제한시간 설정")
+            st.subheader("⏱️ 유형별 기본 제한시간 설정")
             col_t1, col_t2 = st.columns(2)
             with col_t1:
-                game["timer_sec_obj"] = st.number_input("객관식 제한시간 (초)", min_value=5, max_value=300, value=game["timer_sec_obj"])
+                game["timer_sec_obj"] = st.number_input("객관식 기본 제한시간 (초)", min_value=5, max_value=300, value=game["timer_sec_obj"], key="cfg_obj_t")
             with col_t2:
-                game["timer_sec_subj"] = st.number_input("주관식 제한시간 (초)", min_value=5, max_value=300, value=game["timer_sec_subj"])
+                game["timer_sec_subj"] = st.number_input("주관식 기본 제한시간 (초)", min_value=5, max_value=300, value=game["timer_sec_subj"], key="cfg_subj_t")
+
+            if st.button("⚡ 기존의 모든 문제에 위 기본 제한시간 일괄 적용하기", use_container_width=True):
+                for q in game["questions"]:
+                    if "timer" in q:
+                        del q["timer"]  # 개별 고정 시간 삭제하여 기본 시간 적용되도록 초기화
+                st.success("모든 문제의 제한시간이 기본 설정값으로 초기화 및 적용되었습니다!")
+                st.rerun()
 
             st.markdown("---")
             st.subheader("📥 문제 등록 (엑셀 업로드 / 직접 입력)")
@@ -374,7 +396,7 @@ if mode == "진행자 모드 (Host)":
                 q_display = []
                 for idx, q in enumerate(game["questions"], start=1):
                     def_time = game["timer_sec_subj"] if q["type"] == "subjective" else game["timer_sec_obj"]
-                    q_time = q.get("timer", def_time)
+                    q_time = q.get("timer") if q.get("timer") is not None else f"{def_time} (기본값)"
                     ans_show = ", ".join(q["ans"]) if isinstance(q["ans"], list) else str(q["ans"])
                     q_display.append({
                         "번호": idx,
@@ -407,8 +429,11 @@ if mode == "진행자 모드 (Host)":
                             )
                             
                             def_t = game["timer_sec_subj"] if target_q["type"] == "subjective" else game["timer_sec_obj"]
-                            current_timer = target_q.get("timer", def_t)
-                            edit_timer = st.number_input("개별 제한시간 (초)", min_value=5, max_value=300, value=int(current_timer))
+                            has_custom_timer = "timer" in target_q and target_q["timer"] is not None
+                            use_custom_timer = st.checkbox("이 문제만 개별 제한시간 지정 (체크 해제 시 기본 제한시간 사용)", value=has_custom_timer)
+                            
+                            curr_t_val = target_q.get("timer") or def_t
+                            edit_timer = st.number_input("개별 제한시간 (초)", min_value=5, max_value=300, value=int(curr_t_val))
                             
                             edit_options = []
                             if edit_type_str == "객관식":
@@ -431,13 +456,16 @@ if mode == "진행자 모드 (Host)":
                             
                             if save_btn:
                                 parsed_ans = parse_correct_answers(edit_ans_raw)
-                                game["questions"][target_idx] = {
+                                new_q = {
                                     "q": edit_q_text.strip(),
                                     "type": "subjective" if edit_type_str == "주관식" else "objective",
                                     "options": edit_options if edit_type_str == "객관식" else [],
-                                    "ans": parsed_ans,
-                                    "timer": int(edit_timer)
+                                    "ans": parsed_ans
                                 }
+                                if use_custom_timer:
+                                    new_q["timer"] = int(edit_timer)
+                                
+                                game["questions"][target_idx] = new_q
                                 st.success(f"Q{selected_num}번 문제가 수정되었습니다!")
                                 st.rerun()
 
@@ -527,7 +555,9 @@ else:
             else:
                 q_data = game["questions"][curr_q]
                 q_type = q_data["type"]
-                limit = q_data.get("timer") or (game["timer_sec_subj"] if q_type == "subjective" else game["timer_sec_obj"])
+                
+                def_limit = game["timer_sec_subj"] if q_type == "subjective" else game["timer_sec_obj"]
+                limit = q_data.get("timer") if (q_data.get("timer") is not None) else def_limit
                 
                 elapsed = time.time() - game.get("q_start_time", time.time())
                 time_left = max(0, int(limit - elapsed))
@@ -549,8 +579,12 @@ else:
                     if st.session_state.get("rendered_q") != game["curr_q"] or st.session_state.get("rendered_status") != game["status"]:
                         st.rerun()
 
+                    # Dynamic re-fetch limit inside fragment
+                    cur_def_limit = game["timer_sec_subj"] if q_type == "subjective" else game["timer_sec_obj"]
+                    cur_limit = q_data.get("timer") if (q_data.get("timer") is not None) else cur_def_limit
+
                     e = time.time() - game.get("q_start_time", time.time())
-                    t_left = max(0, int(limit - e))
+                    t_left = max(0, int(cur_limit - e))
                     
                     if t_left == 0 and time_left > 0:
                         st.rerun()
