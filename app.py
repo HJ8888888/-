@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import time
+import os
 from google import genai
 
 st.set_page_config(page_title="라이브 퀴즈 챌린지", layout="wide")
@@ -21,6 +22,55 @@ def get_global_game_state():
 
 game = get_global_game_state()
 
+# 엑셀 데이터 파싱 전용 함수
+def parse_df_to_questions(df):
+    parsed_questions = []
+    for _, row in df.iterrows():
+        q_text = str(row["문제"]).strip()
+        ans_text = str(row["정답"]).strip()
+        
+        # 보기1이 존재하고 빈칸이 아닌 경우 객관식/OX
+        is_obj = "보기1" in df.columns and pd.notna(row.get("보기1")) and str(row.get("보기1")).strip() != ""
+        
+        if is_obj:
+            options = []
+            for idx in range(1, 5):
+                col_name = f"보기{idx}"
+                if col_name in df.columns and pd.notna(row.get(col_name)):
+                    val = str(row[col_name]).strip()
+                    if val and val.lower() != 'nan':
+                        options.append(f"{idx}. {val}")
+            
+            parsed_questions.append({
+                "q": q_text,
+                "type": "objective",
+                "options": options,
+                "ans": str(int(float(ans_text))) if ans_text.isdigit() or ans_text.replace('.','',1).isdigit() else ans_text
+            })
+        else:
+            parsed_questions.append({
+                "q": q_text,
+                "type": "subjective",
+                "options": [],
+                "ans": ans_text
+            })
+    return parsed_questions
+
+# GitHub에 quiz.xlsx 가 존재하고 아직 문제 로딩이 안 되어 있다면 자동으로 불러오기
+if not game["questions"]:
+    default_file = None
+    if os.path.exists("quiz.xlsx"):
+        default_file = "quiz.xlsx"
+    elif os.path.exists("quiz.csv"):
+        default_file = "quiz.csv"
+        
+    if default_file:
+        try:
+            df = pd.read_csv(default_file) if default_file.endswith(".csv") else pd.read_excel(default_file)
+            game["questions"] = parse_df_to_questions(df)
+        except Exception:
+            pass
+
 st.sidebar.title("🎮 접속 모드")
 role = st.sidebar.radio("역할을 선택하세요", ["📱 참가자 (User)", "🎙️ 진행자 (Host)"])
 
@@ -38,94 +88,54 @@ if role == "🎙️ 진행자 (Host)":
     # --- 탭 1: 엑셀 파일 업로드 ---
     with tab1:
         st.subheader("📁 엑셀(.xlsx) 파일로 문제 등록")
-        st.info("""
-        💡 **엑셀 작성 팁**
-        - **OX / 2지 선다 문제**: `보기1`, `보기2`만 입력하고 `보기3`, `보기4`를 **빈칸**으로 남겨두시면 3, 4번 보기는 보이지 않습니다!
-        - **주관식 문제**: `문제`, `정답` 열 2개만 입력하시면 됩니다.
-        - **4지 선다**: `보기1`~`보기4` 모두 채워주시면 됩니다.
-        """)
         
-        uploaded_file = st.file_uploader("엑셀 또는 CSV 파일 선택", type=["xlsx", "csv"])
+        # GitHub에 저장된 기본 파일 안내
+        if os.path.exists("quiz.xlsx") or os.path.exists("quiz.csv"):
+            st.success("💾 **GitHub에 저장된 기본 엑셀(quiz.xlsx)이 성공적으로 읽혔습니다!**")
+            if st.button("🔄 저장된 quiz.xlsx 문제로 다시 초기화하기"):
+                file_path = "quiz.xlsx" if os.path.exists("quiz.xlsx") else "quiz.csv"
+                df = pd.read_csv(file_path) if file_path.endswith(".csv") else pd.read_excel(file_path)
+                game["questions"] = parse_df_to_questions(df)
+                game["current_question"] = 0
+                game["status"] = "waiting"
+                game["answers"] = {}
+                game["scores"] = {}
+                st.rerun()
+
+        st.info("💡 다른 엑셀 파일로 변경하고 싶으시면 아래에서 임시 업로드 하실 수 있습니다.")
+        
+        uploaded_file = st.file_uploader("새로운 엑셀 또는 CSV 파일 선택", type=["xlsx", "csv"])
         if uploaded_file is not None:
             try:
                 df = pd.read_csv(uploaded_file) if uploaded_file.name.endswith(".csv") else pd.read_excel(uploaded_file)
                 st.write("📋 미리보기:", df.head())
                 
-                if st.button("📊 이 엑셀 파일로 문제 등록하기"):
-                    parsed_questions = []
-                    for _, row in df.iterrows():
-                        q_text = str(row["문제"]).strip()
-                        ans_text = str(row["정답"]).strip()
-                        
-                        # 보기1 열이 있고 빈칸이 아니면 객관식/OX
-                        is_obj = "보기1" in df.columns and pd.notna(row.get("보기1")) and str(row.get("보기1")).strip() != ""
-                        
-                        if is_obj:
-                            # 빈칸이 아닌 보기만 동적으로 추려서 리스트 생성 (3, 4번 빈칸 자동제거)
-                            options = []
-                            for idx in range(1, 5):
-                                col_name = f"보기{idx}"
-                                if col_name in df.columns and pd.notna(row.get(col_name)):
-                                    val = str(row[col_name]).strip()
-                                    if val and val.lower() != 'nan':
-                                        options.append(f"{idx}. {val}")
-                            
-                            parsed_questions.append({
-                                "q": q_text,
-                                "type": "objective",
-                                "options": options,
-                                "ans": str(int(float(ans_text))) if ans_text.isdigit() or ans_text.replace('.','',1).isdigit() else ans_text
-                            })
-                        else:
-                            parsed_questions.append({
-                                "q": q_text,
-                                "type": "subjective",
-                                "options": [],
-                                "ans": ans_text
-                            })
-                    
-                    game["questions"] = parsed_questions
+                if st.button("📊 이 새로 올린 엑셀로 문제 바꾸기"):
+                    game["questions"] = parse_df_to_questions(df)
                     game["current_question"] = 0
                     game["status"] = "waiting"
                     game["answers"] = {}
                     game["scores"] = {}
-                    st.success(f"🎉 총 {len(parsed_questions)}개의 문제가 준비되었습니다!")
+                    st.success(f"🎉 총 {len(game['questions'])}개의 새 문제가 준비되었습니다!")
             except Exception as e:
                 st.error(f"오류가 발생했습니다. 열 이름을 확인해주세요! ({e})")
 
     # --- 탭 2: 직접 입력 ---
     with tab2:
         st.subheader("내가 원하는 문제 직접 입력")
-        st.caption("OX 형식: `문제 | O, X | 정답번호(1 또는 2)`  /  4지선다: `문제 | 보기1, 보기2, 보기3, 보기4 | 정답번호`")
-        default_sample = (
-            "파이썬은 초보자가 배우기 쉬운 프로그래밍 언어이다. | O, X | 1\n"
-            "대한민국의 수도는? | 서울\n"
-            "AI의 약자는? | Apple Ice, Artificial Intelligence, Auto Internet, Action Item | 2"
-        )
-        q_text = st.text_area("문제 입력:", value=default_sample, height=120)
+        default_sample = "파이썬은 초보자가 배우기 쉬운 프로그래밍 언어이다. | O, X | 1"
+        q_text = st.text_area("문제 입력:", value=default_sample, height=100)
         
         if st.button("📝 텍스트 문제 등록하기"):
             parsed_questions = []
             for line in q_text.strip().split("\n"):
                 parts = line.split("|")
                 if len(parts) == 2:
-                    # 주관식
-                    parsed_questions.append({
-                        "q": parts[0].strip(),
-                        "type": "subjective",
-                        "options": [],
-                        "ans": parts[1].strip()
-                    })
+                    parsed_questions.append({"q": parts[0].strip(), "type": "subjective", "options": [], "ans": parts[1].strip()})
                 elif len(parts) == 3:
-                    # 객관식 / OX
                     raw_opts = [opt.strip() for opt in parts[1].split(",") if opt.strip()]
                     opts = [f"{i+1}. {opt}" for i, opt in enumerate(raw_opts)]
-                    parsed_questions.append({
-                        "q": parts[0].strip(),
-                        "type": "objective",
-                        "options": opts,
-                        "ans": parts[2].strip()
-                    })
+                    parsed_questions.append({"q": parts[0].strip(), "type": "objective", "options": opts, "ans": parts[2].strip()})
             if parsed_questions:
                 game["questions"] = parsed_questions
                 game["current_question"] = 0
@@ -142,8 +152,7 @@ if role == "🎙️ 진행자 (Host)":
         if st.button("✨ AI OX 문제 준비"):
             game["questions"] = [
                 {"q": "Q1. 파이썬은 C언어보다 나중에 개발된 언어이다.", "type": "objective", "options": ["1. O", "2. X"], "ans": "1"},
-                {"q": "Q2. 물의 화학식은 H2O이다.", "type": "objective", "options": ["1. O", "2. X"], "ans": "1"},
-                {"q": "Q3. 태양계에서 가장 큰 행성은 지구이다.", "type": "objective", "options": ["1. O", "2. X"], "ans": "2"}
+                {"q": "Q2. 물의 화학식은 H2O이다.", "type": "objective", "options": ["1. O", "2. X"], "ans": "1"}
             ]
             game["current_question"] = 0
             game["status"] = "waiting"
@@ -187,7 +196,6 @@ if role == "🎙️ 진행자 (Host)":
                                     else:
                                         scores[nick] = scores.get(nick, 0)
                                 else:
-                                    # 주관식 스마트 채점
                                     norm_user = user_ans_clean.replace(" ", "").lower()
                                     norm_corr = correct_ans.replace(" ", "").lower()
                                     if norm_user == norm_corr:
