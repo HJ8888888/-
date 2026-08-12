@@ -9,7 +9,7 @@ st.set_page_config(page_title="라이브 퀴즈 챌린지", layout="wide")
 # ---------------------------------------------------------
 # 🔑 진행자 전용 비밀번호 설정
 # ---------------------------------------------------------
-HOST_PASSWORD = "sunghejinH8!"
+HOST_PASSWORD = "1234"
 
 # 1. 전역 게임 상태 공유 (서버 저장소)
 @st.cache_resource
@@ -178,41 +178,52 @@ if role == "🎙️ 진행자 (Host)":
             p_count = len(game["participants"])
             st.info(f"👥 **현재 입장한 참가자 ({p_count}명):** " + (", ".join([f"`{p}`" for p in game["participants"]]) if game["participants"] else "아직 입장한 참가자가 없습니다."))
             
-            if st.button("▶️ 게임 시작 / 다음 문제 넘어가기"):
-                if not game["questions"]:
-                    st.warning("먼저 문제를 등록해 주세요!")
-                else:
-                    if game["status"] == "waiting":
-                        game["status"] = "playing"
-                        game["current_question"] = 0
-                    elif game["status"] == "playing":
-                        if game["current_question"] < len(game["questions"]) - 1:
-                            game["current_question"] += 1
-                        else:
-                            game["status"] = "ended"
-                            scores = {}
-                            for q_idx, q_data in enumerate(game["questions"]):
-                                user_ans_dict = game["answers"].get(q_idx, {})
-                                correct_ans = str(q_data["ans"]).strip()
-                                q_type = q_data.get("type", "objective")
-                                
-                                for nick, user_ans in user_ans_dict.items():
-                                    user_ans_clean = str(user_ans).strip()
-                                    if q_type == "objective":
-                                        if user_ans_clean.startswith(correct_ans):
-                                            scores[nick] = scores.get(nick, 0) + 1
+            # 제어 버튼 배치 (시작/다음 + 초기화 버튼)
+            col1, col2 = st.columns([2, 1])
+            
+            with col1:
+                if st.button("▶️ 게임 시작 / 다음 문제 넘어가기", use_container_width=True):
+                    if not game["questions"]:
+                        st.warning("먼저 문제를 등록해 주세요!")
+                    else:
+                        if game["status"] == "waiting":
+                            game["status"] = "playing"
+                            game["current_question"] = 0
+                        elif game["status"] == "playing":
+                            if game["current_question"] < len(game["questions"]) - 1:
+                                game["current_question"] += 1
+                            else:
+                                game["status"] = "ended"
+                                # 들어온 모든 참가자 점수 0점으로 초기화 후 채점
+                                scores = {p: 0 for p in game["participants"]}
+                                for q_idx, q_data in enumerate(game["questions"]):
+                                    user_ans_dict = game["answers"].get(q_idx, {})
+                                    correct_ans = str(q_data["ans"]).strip()
+                                    q_type = q_data.get("type", "objective")
+                                    
+                                    for nick, user_ans in user_ans_dict.items():
+                                        user_ans_clean = str(user_ans).strip()
+                                        if q_type == "objective":
+                                            if user_ans_clean.startswith(correct_ans):
+                                                scores[nick] = scores.get(nick, 0) + 1
                                         else:
-                                            scores[nick] = scores.get(nick, 0)
-                                    else:
-                                        norm_user = user_ans_clean.replace(" ", "").lower()
-                                        norm_corr = correct_ans.replace(" ", "").lower()
-                                        if norm_user == norm_corr:
-                                            scores[nick] = scores.get(nick, 0) + 1
-                                        else:
-                                            scores[nick] = scores.get(nick, 0)
-                            game["scores"] = scores
-                    
-                    game["q_start_time"] = time.time()
+                                            norm_user = user_ans_clean.replace(" ", "").lower()
+                                            norm_corr = correct_ans.replace(" ", "").lower()
+                                            if norm_user == norm_corr:
+                                                scores[nick] = scores.get(nick, 0) + 1
+                                game["scores"] = scores
+                        
+                        game["q_start_time"] = time.time()
+                        st.rerun()
+
+            with col2:
+                if st.button("🔄 접속자 & 게임 전체 초기화", type="secondary", use_container_width=True):
+                    game["status"] = "waiting"
+                    game["current_question"] = 0
+                    game["answers"] = {}
+                    game["scores"] = {}
+                    game["participants"] = []
+                    st.success("🎉 참가자 명단 및 진행 상태가 깨끗하게 초기화되었습니다!")
                     st.rerun()
 
             # --- 현재 진행 문제 및 실시간 타이머 표시 ---
@@ -221,14 +232,12 @@ if role == "🎙️ 진행자 (Host)":
                 q_data = game["questions"][game["current_question"]]
                 q_type_str = "주관식" if q_data.get("type") == "subjective" else "객관식/OX"
                 
-                # 진행자용 실시간 남은 시간 계산
                 elapsed = time.time() - game.get("q_start_time", time.time())
                 limit = game.get("timer_sec", 15)
                 time_left = max(0, int(limit - elapsed))
                 
                 st.header(f"📢 Q{game['current_question']+1} [{q_type_str}]. {q_data['q']}")
                 
-                # ⏱️ 진행자 화면 타이머 바
                 if time_left > 0:
                     st.progress(time_left / limit, text=f"⏱️ 남은 시간: **{time_left}초**")
                 else:
@@ -246,9 +255,10 @@ if role == "🎙️ 진행자 (Host)":
 
             elif game["status"] == "ended":
                 st.divider()
-                st.header("🏆 최종 결과 TOP 5 리더보드")
+                st.header("🏆 전체 참가자 최종 순위 리더보드")
                 if game["scores"]:
-                    sorted_scores = sorted(game["scores"].items(), key=lambda x: x[1], reverse=True)[:5]
+                    # 참가자 전체 순위 출력 (전체 정렬)
+                    sorted_scores = sorted(game["scores"].items(), key=lambda x: x[1], reverse=True)
                     for rank, (nick, score) in enumerate(sorted_scores, 1):
                         icon = "🥇" if rank==1 else "🥈" if rank==2 else "🥉" if rank==3 else "🏅"
                         st.subheader(f"{icon} **{rank}위**: {nick} — {score}점 / {len(game['questions'])}점 만점")
@@ -307,9 +317,10 @@ else:
                 st.balloons()
                 st.success("🎉 모든 퀴즈가 종료되었습니다!")
                 st.divider()
-                st.subheader("🏆 최종 순위 (TOP 5)")
+                st.subheader("🏆 전체 참가자 최종 순위")
                 if game["scores"]:
-                    sorted_scores = sorted(game["scores"].items(), key=lambda x: x[1], reverse=True)[:5]
+                    # 참가자 전체 순위 출력 (전체 정렬)
+                    sorted_scores = sorted(game["scores"].items(), key=lambda x: x[1], reverse=True)
                     for rank, (nick, score) in enumerate(sorted_scores, 1):
                         icon = "🥇" if rank==1 else "🥈" if rank==2 else "🥉" if rank==3 else "🏅"
                         st.write(f"{icon} **{rank}위**: {nick} ({score}점)")
