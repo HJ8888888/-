@@ -7,7 +7,7 @@ from google import genai
 st.set_page_config(page_title="라이브 퀴즈 챌린지", layout="wide")
 
 # ---------------------------------------------------------
-# 🔑 진행자 전용 비밀번호 설정 (원하는 비밀번호로 바꾸세요!)
+# 🔑 진행자 전용 비밀번호 설정
 # ---------------------------------------------------------
 HOST_PASSWORD = "sunghejinH8!"
 
@@ -171,8 +171,8 @@ if role == "🎙️ 진행자 (Host)":
 
         st.divider()
 
-        # --- 실시간 진행 제어 ---
-        @st.fragment(run_every="2s")
+        # --- 실시간 진행 제어 (1초 단위 자동 갱신) ---
+        @st.fragment(run_every="1s")
         def show_host_dashboard():
             st.subheader("🚀 라이브 진행 제어")
             p_count = len(game["participants"])
@@ -215,12 +215,24 @@ if role == "🎙️ 진행자 (Host)":
                     game["q_start_time"] = time.time()
                     st.rerun()
 
-            # --- 현재 문제 화면 ---
+            # --- 현재 진행 문제 및 실시간 타이머 표시 ---
             if game["status"] == "playing" and game["questions"]:
                 st.divider()
                 q_data = game["questions"][game["current_question"]]
                 q_type_str = "주관식" if q_data.get("type") == "subjective" else "객관식/OX"
+                
+                # 진행자용 실시간 남은 시간 계산
+                elapsed = time.time() - game.get("q_start_time", time.time())
+                limit = game.get("timer_sec", 15)
+                time_left = max(0, int(limit - elapsed))
+                
                 st.header(f"📢 Q{game['current_question']+1} [{q_type_str}]. {q_data['q']}")
+                
+                # ⏱️ 진행자 화면 타이머 바
+                if time_left > 0:
+                    st.progress(time_left / limit, text=f"⏱️ 남은 시간: **{time_left}초**")
+                else:
+                    st.error("⏰ 제한 시간이 종료되었습니다! 더 이상 답안 제출이 불가능합니다.")
                 
                 if q_data.get("type") == "objective":
                     for opt in q_data["options"]:
