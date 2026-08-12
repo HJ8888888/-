@@ -64,7 +64,7 @@ st.markdown("""
         border-radius: 30px;
         display: inline-block;
         border: 2px solid #F8C8D4;
-        margin-bottom: 10px;
+        margin-bottom: 12px;
     }
 
     .stat-card-correct {
@@ -106,8 +106,8 @@ def get_global_game():
         "questions": [],
         "answers": {},              # {q_idx: {nickname: choice_list_or_str}}
         "participants": [],         # list of nicknames
-        "timer_sec_obj": 15,        # 객관식 시간초 기본값
-        "timer_sec_subj": 30        # 주관식 시간초 기본값
+        "timer_sec_obj": 15,        # 객관식 기본 제한시간
+        "timer_sec_subj": 30        # 주관식 기본 제한시간
     }
 
 game = get_global_game()
@@ -187,7 +187,171 @@ def calculate_scores():
     return scores
 
 # ==========================================
-# 2. Sidebar Mode Switcher
+# 2. Real-time Independent UI Fragments
+# ==========================================
+
+# 진행자 전용 실시간 타이머 및 화면 갱신
+@st.fragment(run_every="1s")
+def host_running_view():
+    curr_q = game["curr_q"]
+    if curr_q >= len(game["questions"]):
+        game["status"] = "finished"
+        st.rerun()
+        return
+
+    q_data = game["questions"][curr_q]
+    q_type = q_data["type"]
+    def_limit = game["timer_sec_subj"] if q_type == "subjective" else game["timer_sec_obj"]
+    limit = q_data.get("timer") if (q_data.get("timer") is not None) else def_limit
+    
+    elapsed = time.time() - game.get("q_start_time", time.time())
+    time_left = max(0, int(limit - elapsed))
+    
+    st.markdown(f"### Q{curr_q + 1}. {q_data['q']}")
+    if q_type == "objective" and q_data.get("options"):
+        for idx, opt in enumerate(q_data["options"], start=1):
+            st.write(f"**{opt}**")
+    
+    st.markdown(f"<div class='timer-badge'>⏱️ 남은 시간: {time_left} 초 (설정: {limit}초)</div>", unsafe_allow_html=True)
+    
+    col_t1, col_t2, col_t3 = st.columns(3)
+    with col_t1:
+        if st.button("➕ 10초 연장", key=f"host_add10_{curr_q}", use_container_width=True):
+            q_data["timer"] = limit + 10
+            st.rerun()
+    with col_t2:
+        if st.button("➖ 10초 단축", key=f"host_sub10_{curr_q}", use_container_width=True):
+            q_data["timer"] = max(5, limit - 10)
+            st.rerun()
+    with col_t3:
+        if st.button("⏱️ 타이머 리셋", key=f"host_reset_{curr_q}", use_container_width=True):
+            game["q_start_time"] = time.time()
+            st.rerun()
+
+    submits = game["answers"].get(curr_q, {})
+    st.write(f"📊 **현재 제출 인원:** {len(submits)} / {len(game['participants'])} 명")
+    
+    st.markdown("---")
+    col_h1, col_h2 = st.columns(2)
+    with col_h1:
+        if st.button("⬅️ 이전 문제", use_container_width=True, disabled=(curr_q == 0)):
+            game["curr_q"] -= 1
+            game["q_start_time"] = time.time()
+            st.rerun()
+    with col_h2:
+        if curr_q < len(game["questions"]) - 1:
+            if st.button("➡️ 다음 문제", use_container_width=True):
+                game["curr_q"] += 1
+                game["q_start_time"] = time.time()
+                st.rerun()
+        else:
+            if st.button("🏁 게임 종료하기", use_container_width=True):
+                game["status"] = "finished"
+                st.rerun()
+
+# 참가자 대기 모드 자동 감지
+@st.fragment(run_every="1s")
+def participant_waiting_fragment():
+    if game["status"] == "running":
+        st.rerun()
+    else:
+        st.info("⏳ 진행자가 게임을 시작하기를 기다리고 있습니다...")
+
+# 참가자 진행 모드 실시간 타이머
+@st.fragment(run_every="1s")
+def participant_running_fragment(nickname):
+    if game["status"] != "running":
+        st.rerun()
+        return
+
+    curr_q = game["curr_q"]
+    if curr_q >= len(game["questions"]):
+        st.write("모든 문제가 끝났습니다. 진행자의 안내를 기다려주세요.")
+        return
+
+    q_data = game["questions"][curr_q]
+    q_type = q_data["type"]
+    def_limit = game["timer_sec_subj"] if q_type == "subjective" else game["timer_sec_obj"]
+    limit = q_data.get("timer") if (q_data.get("timer") is not None) else def_limit
+    
+    elapsed = time.time() - game.get("q_start_time", time.time())
+    time_left = max(0, int(limit - elapsed))
+    
+    st.markdown(f"### Q{curr_q + 1}. {q_data['q']}")
+    
+    if q_type == "objective" and q_data.get("options"):
+        st.markdown("**[보기]**")
+        for opt in q_data["options"]:
+            st.markdown(f"- {opt}")
+    
+    st.markdown("---")
+    st.markdown(f"<div class='timer-badge'>⏱️ 남은 시간: {time_left} 초</div>", unsafe_allow_html=True)
+    
+    q_answers = game["answers"].setdefault(curr_q, {})
+    prev_sub = q_answers.get(nickname, None)
+    
+    if prev_sub is not None:
+        disp_ans = ", ".join(prev_sub) if isinstance(prev_sub, list) else str(prev_sub)
+        st.success(f"✅ 제출된 답안: **{disp_ans}** (제출 완료 / 수정 가능)")
+    
+    if time_left > 0:
+        with st.form(key=f"answer_form_{curr_q}_{nickname}"):
+            if q_type == "objective":
+                default_vals = []
+                if isinstance(prev_sub, list):
+                    default_vals = [opt for opt in q_data["options"] if opt in prev_sub or opt.split(".")[0].strip() in [s.split(".")[0].strip() for s in prev_sub]]
+                
+                user_ans = st.multiselect(
+                    "정답을 선택하세요 (다중 선택 가능):",
+                    options=q_data["options"],
+                    default=default_vals
+                )
+            else:
+                default_str = str(prev_sub) if prev_sub is not None else ""
+                user_ans = st.text_input("정답 입력:", value=default_str)
+                
+            submit_btn = st.form_submit_button("📝 답안 제출 / 수정하기")
+            
+            if submit_btn:
+                if not user_ans:
+                    st.warning("답안을 선택하거나 입력해주세요!")
+                else:
+                    game["answers"][curr_q][nickname] = user_ans
+                    st.success("답안이 성공적으로 저장되었습니다!")
+                    st.rerun()
+    else:
+        st.warning("⏰ 제한시간이 종료되었습니다.")
+        
+        if q_type == "objective":
+            st.subheader("📊 선택 결과 및 정답")
+            submits = game["answers"].get(curr_q, {})
+            total_submits = len(submits)
+            
+            opt_counts = {idx + 1: 0 for idx in range(len(q_data["options"]))}
+            for u_ans in submits.values():
+                choices = u_ans if isinstance(u_ans, list) else [u_ans]
+                for choice in choices:
+                    try:
+                        opt_num = int(str(choice).split(".")[0].strip())
+                        if opt_num in opt_counts:
+                            opt_counts[opt_num] += 1
+                    except:
+                        pass
+            
+            correct_indices = [int(a) for a in q_data["ans"] if a.isdigit()]
+            
+            for idx, opt in enumerate(q_data["options"], start=1):
+                is_correct = idx in correct_indices
+                cnt = opt_counts.get(idx, 0)
+                pct = (cnt / total_submits * 100) if total_submits > 0 else 0
+                
+                if is_correct:
+                    st.markdown(f"<div class='stat-card-correct'>⭕ <b>{opt}</b> — {cnt}명 ({pct:.1f}%) [정답]</div>", unsafe_allow_html=True)
+                else:
+                    st.markdown(f"<div class='stat-card-normal'>⚪ <b>{opt}</b> — {cnt}명 ({pct:.1f}%)</div>", unsafe_allow_html=True)
+
+# ==========================================
+# 3. Sidebar Mode Switcher
 # ==========================================
 st.sidebar.title("💡 라이브 퀴즈 챌린지")
 mode = st.sidebar.radio("모드 선택", ["진행자 모드 (Host)", "참가자 모드 (Participant)"])
@@ -198,7 +362,7 @@ st.sidebar.markdown(f"**현재 접속 인원:** {len(game['participants'])} / 10
 st.sidebar.markdown(f"**등록된 문제 수:** {len(game['questions'])} 개")
 
 # ==========================================
-# 3. 진행자 모드 (HOST MODE)
+# 4. 진행자 모드 (HOST MODE)
 # ==========================================
 if mode == "진행자 모드 (Host)":
     if "host_authenticated" not in st.session_state:
@@ -260,63 +424,7 @@ if mode == "진행자 모드 (Host)":
                             st.rerun()
                             
                 elif game["status"] == "running":
-                    curr_q = game["curr_q"]
-                    if curr_q >= len(game["questions"]):
-                        game["status"] = "finished"
-                        st.rerun()
-                    else:
-                        q_data = game["questions"][curr_q]
-                        q_type = q_data["type"]
-                        
-                        # Dynamic Limit Calculation
-                        def_limit = game["timer_sec_subj"] if q_type == "subjective" else game["timer_sec_obj"]
-                        limit = q_data.get("timer") if (q_data.get("timer") is not None) else def_limit
-                        
-                        elapsed = time.time() - game.get("q_start_time", time.time())
-                        time_left = max(0, int(limit - elapsed))
-                        
-                        st.markdown(f"### Q{curr_q + 1}. {q_data['q']}")
-                        if q_type == "objective" and q_data.get("options"):
-                            for idx, opt in enumerate(q_data["options"], start=1):
-                                st.write(f"**{opt}**")
-                        
-                        st.markdown(f"<div class='timer-badge'>⏱️ 남은 시간: {time_left} 초 (설정 제한시간: {limit}초)</div>", unsafe_allow_html=True)
-                        
-                        # Live Timer Control Buttons
-                        col_t1, col_t2, col_t3 = st.columns(3)
-                        with col_t1:
-                            if st.button("➕ 10초 연장", key=f"add10_{curr_q}", use_container_width=True):
-                                q_data["timer"] = limit + 10
-                                st.rerun()
-                        with col_t2:
-                            if st.button("➖ 10초 단축", key=f"sub10_{curr_q}", use_container_width=True):
-                                q_data["timer"] = max(5, limit - 10)
-                                st.rerun()
-                        with col_t3:
-                            if st.button("⏱️ 타이머 처음부터 다시 시작", key=f"reset_t_{curr_q}", use_container_width=True):
-                                game["q_start_time"] = time.time()
-                                st.rerun()
-
-                        submits = game["answers"].get(curr_q, {})
-                        st.write(f"📊 **현재 제출 인원:** {len(submits)} / {len(game['participants'])} 명")
-                        
-                        st.markdown("---")
-                        col_h1, col_h2 = st.columns(2)
-                        with col_h1:
-                            if st.button("⬅️ 이전 문제", use_container_width=True, disabled=(curr_q == 0)):
-                                game["curr_q"] -= 1
-                                game["q_start_time"] = time.time()
-                                st.rerun()
-                        with col_h2:
-                            if curr_q < len(game["questions"]) - 1:
-                                if st.button("➡️ 다음 문제", use_container_width=True):
-                                    game["curr_q"] += 1
-                                    game["q_start_time"] = time.time()
-                                    st.rerun()
-                            else:
-                                if st.button("🏁 게임 종료하기", use_container_width=True):
-                                    game["status"] = "finished"
-                                    st.rerun()
+                    host_running_view()
                                     
                 elif game["status"] == "finished":
                     st.balloons()
@@ -362,7 +470,7 @@ if mode == "진행자 모드 (Host)":
             if st.button("⚡ 기존의 모든 문제에 위 기본 제한시간 일괄 적용하기", use_container_width=True):
                 for q in game["questions"]:
                     if "timer" in q:
-                        del q["timer"]  # 개별 고정 시간 삭제하여 기본 시간 적용되도록 초기화
+                        del q["timer"]
                 st.success("모든 문제의 제한시간이 기본 설정값으로 초기화 및 적용되었습니다!")
                 st.rerun()
 
@@ -494,7 +602,7 @@ if mode == "진행자 모드 (Host)":
                 st.info("참가자가 없거나 아직 제출된 답안이 없습니다.")
 
 # ==========================================
-# 4. 참가자 모드 (PARTICIPANT MODE)
+# 5. 참가자 모드 (PARTICIPANT MODE)
 # ==========================================
 else:
     st.title("🙋 참가자 모드 (Participant)")
@@ -532,127 +640,10 @@ else:
         st.markdown("---")
         
         if game["status"] == "waiting":
-            st.info("⏳ 진행자가 게임을 시작하기를 기다리고 있습니다...")
-            
-            @st.fragment(run_every="2s")
-            def wait_fragment():
-                if game["status"] == "running":
-                    st.rerun()
-            wait_fragment()
+            participant_waiting_fragment()
             
         elif game["status"] == "running":
-            curr_q = game["curr_q"]
-            st.session_state["rendered_q"] = curr_q
-            st.session_state["rendered_status"] = game["status"]
-
-            if curr_q >= len(game["questions"]):
-                st.write("모든 문제가 끝났습니다. 진행자의 안내를 기다려주세요.")
-                @st.fragment(run_every="1s")
-                def end_wait_fragment():
-                    if game["status"] != "running" or game["curr_q"] != curr_q:
-                        st.rerun()
-                end_wait_fragment()
-            else:
-                q_data = game["questions"][curr_q]
-                q_type = q_data["type"]
-                
-                def_limit = game["timer_sec_subj"] if q_type == "subjective" else game["timer_sec_obj"]
-                limit = q_data.get("timer") if (q_data.get("timer") is not None) else def_limit
-                
-                elapsed = time.time() - game.get("q_start_time", time.time())
-                time_left = max(0, int(limit - elapsed))
-                
-                st.markdown(f"### Q{curr_q + 1}. {q_data['q']}")
-                
-                if q_type == "objective" and q_data.get("options"):
-                    st.markdown("**[보기]**")
-                    for opt in q_data["options"]:
-                        st.markdown(f"- {opt}")
-                
-                st.markdown("---")
-                
-                q_answers = game["answers"].setdefault(curr_q, {})
-                prev_sub = q_answers.get(nickname, None)
-                
-                @st.fragment(run_every="1s")
-                def participant_timer_fragment():
-                    if st.session_state.get("rendered_q") != game["curr_q"] or st.session_state.get("rendered_status") != game["status"]:
-                        st.rerun()
-
-                    # Dynamic re-fetch limit inside fragment
-                    cur_def_limit = game["timer_sec_subj"] if q_type == "subjective" else game["timer_sec_obj"]
-                    cur_limit = q_data.get("timer") if (q_data.get("timer") is not None) else cur_def_limit
-
-                    e = time.time() - game.get("q_start_time", time.time())
-                    t_left = max(0, int(cur_limit - e))
-                    
-                    if t_left == 0 and time_left > 0:
-                        st.rerun()
-
-                    st.markdown(f"<div class='timer-badge'>⏱️ 남은 시간: {t_left} 초</div>", unsafe_allow_html=True)
-                    return t_left
-                
-                t_left = participant_timer_fragment()
-                
-                if prev_sub is not None:
-                    disp_ans = ", ".join(prev_sub) if isinstance(prev_sub, list) else str(prev_sub)
-                    st.success(f"✅ 제출된 답안: **{disp_ans}** (제출 완료 / 수정 가능)")
-                
-                if t_left > 0:
-                    with st.form(key=f"answer_form_{curr_q}"):
-                        if q_type == "objective":
-                            default_vals = []
-                            if isinstance(prev_sub, list):
-                                default_vals = [opt for opt in q_data["options"] if opt in prev_sub or opt.split(".")[0].strip() in [s.split(".")[0].strip() for s in prev_sub]]
-                            
-                            user_ans = st.multiselect(
-                                "정답을 선택하세요 (다중 선택 가능):",
-                                options=q_data["options"],
-                                default=default_vals
-                            )
-                        else:
-                            default_str = str(prev_sub) if prev_sub is not None else ""
-                            user_ans = st.text_input("정답 입력:", value=default_str)
-                            
-                        submit_btn = st.form_submit_button("📝 답안 제출 / 수정하기")
-                        
-                        if submit_btn:
-                            if not user_ans:
-                                st.warning("답안을 선택하거나 입력해주세요!")
-                            else:
-                                game["answers"][curr_q][nickname] = user_ans
-                                st.success("답안이 성공적으로 저장되었습니다!")
-                                st.rerun()
-                else:
-                    st.warning("⏰ 제한시간이 종료되었습니다.")
-                    
-                    if q_type == "objective":
-                        st.subheader("📊 선택 결과 및 정답")
-                        submits = game["answers"].get(curr_q, {})
-                        total_submits = len(submits)
-                        
-                        opt_counts = {idx + 1: 0 for idx in range(len(q_data["options"]))}
-                        for u_ans in submits.values():
-                            choices = u_ans if isinstance(u_ans, list) else [u_ans]
-                            for choice in choices:
-                                try:
-                                    opt_num = int(str(choice).split(".")[0].strip())
-                                    if opt_num in opt_counts:
-                                        opt_counts[opt_num] += 1
-                                except:
-                                    pass
-                        
-                        correct_indices = [int(a) for a in q_data["ans"] if a.isdigit()]
-                        
-                        for idx, opt in enumerate(q_data["options"], start=1):
-                            is_correct = idx in correct_indices
-                            cnt = opt_counts.get(idx, 0)
-                            pct = (cnt / total_submits * 100) if total_submits > 0 else 0
-                            
-                            if is_correct:
-                                st.markdown(f"<div class='stat-card-correct'>⭕ <b>{opt}</b> — {cnt}명 ({pct:.1f}%) [정답]</div>", unsafe_allow_html=True)
-                            else:
-                                st.markdown(f"<div class='stat-card-normal'>⚪ <b>{opt}</b> — {cnt}명 ({pct:.1f}%)</div>", unsafe_allow_html=True)
+            participant_running_fragment(nickname)
 
         elif game["status"] == "finished":
             st.balloons()
