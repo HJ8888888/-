@@ -1,4 +1,4 @@
-clean_app_code = '''import streamlit as st
+import streamlit as st
 import time
 import pandas as pd
 import json
@@ -638,11 +638,3 @@ else:
             scores = calculate_scores()
             my_score = scores.get(nickname, 0)
             st.markdown(f"### 🏆 {nickname} 님의 최종 점수: **{my_score}점**")
-'''
-
-with open("app.py", "w", encoding="utf-8") as f:
-    f.write(clean_app_code)
-
-import py_compile
-py_compile.compile('app.py', doraise=True)
-print("Updated & Compiled perfectly!")
