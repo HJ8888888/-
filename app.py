@@ -462,7 +462,8 @@ else:
         
     if not st.session_state["my_nickname"]:
         st.subheader("닉네임을 입력하고 입장해주세요")
-        nickname_input = st.text_input("닉네임 입력 (최대 10자)", max_chars=10)
+        st.info("💡 **학과명_성명** 형식으로 입장해 주세요. (예: 경영학과_홍길동)")
+        nickname_input = st.text_input("닉네임 입력 (학과명_성명)", max_chars=20)
         
         if st.button("입장하기"):
             nickname_clean = nickname_input.strip()
