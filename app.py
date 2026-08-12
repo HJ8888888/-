@@ -111,7 +111,6 @@ def get_global_game():
 
 game = get_global_game()
 
-# Helper: Parse raw answer string into list of clean correct answers
 def parse_correct_answers(ans_raw):
     if isinstance(ans_raw, list):
         return [str(a).strip() for a in ans_raw if str(a).strip()]
@@ -125,7 +124,6 @@ def parse_correct_answers(ans_raw):
             clean_parts.append(p)
     return clean_parts
 
-# Helper: Parse Excel/Text into standard questions list
 def process_questions_df(df):
     q_list = []
     for idx, row in df.iterrows():
@@ -142,7 +140,6 @@ def process_questions_df(df):
                     if val:
                         options.append(val)
         
-        # 개별 제한시간 설정 확인
         custom_timer = None
         for t_col in ["제한시간", "제한시간(초)", "시간"]:
             if t_col in row and pd.notna(row[t_col]):
@@ -163,7 +160,6 @@ def process_questions_df(df):
             q_list.append(q_dict)
     return q_list
 
-# Helper: Calculate user score
 def calculate_scores():
     scores = {p: 0 for p in game["participants"]}
     for q_idx, q_data in enumerate(game["questions"]):
@@ -175,23 +171,19 @@ def calculate_scores():
                 scores[p] = 0
                 
             if q_data["type"] == "objective":
-                # Convert user selection to option indices list
                 if isinstance(user_ans, list):
                     user_indices = [str(a).split(".")[0].strip() for a in user_ans]
                 else:
                     user_indices = [str(user_ans).split(".")[0].strip()]
                 
-                # Check exact match for multi-choice
                 if sorted(user_indices) == sorted(correct_ans):
                     scores[p] += 1
             else:
-                # Subjective comparison
                 u_str = str(user_ans).strip().lower()
                 c_strs = [c.lower() for c in correct_ans]
                 if u_str in c_strs:
                     scores[p] += 1
     return scores
-
 
 # ==========================================
 # 2. Sidebar Mode Switcher
@@ -200,15 +192,14 @@ st.sidebar.title("💡 라이브 퀴즈 챌린지")
 mode = st.sidebar.radio("모드 선택", ["진행자 모드 (Host)", "참가자 모드 (Participant)"])
 
 st.sidebar.markdown("---")
+st.sidebar.markdown(f"**현재 게임 상태:** `{game['status'].upper()}`")
 st.sidebar.markdown(f"**현재 접속 인원:** {len(game['participants'])} / 100 명")
 st.sidebar.markdown(f"**등록된 문제 수:** {len(game['questions'])} 개")
-
 
 # ==========================================
 # 3. 진행자 모드 (HOST MODE)
 # ==========================================
 if mode == "진행자 모드 (Host)":
-    # 비밀번호 인증 상태 확인
     if "host_authenticated" not in st.session_state:
         st.session_state["host_authenticated"] = False
 
@@ -228,11 +219,9 @@ if mode == "진행자 모드 (Host)":
                 else:
                     st.error("비밀번호가 올바르지 않습니다. 다시 입력해 주세요.")
     else:
-        # 인증 성공 시 진행자 메인 화면
         st.title("🎬 진행자 제어판 (Host Panel)")
         
-        # 진행자 로그아웃 (잠금) 버튼
-        if st.sidebar.button("🔒 진행자 모드 잠금 (로그아웃)"):
+        if st.sidebar.button("🔒 진행자 잠금 (로그아웃)"):
             st.session_state["host_authenticated"] = False
             st.rerun()
 
@@ -246,8 +235,19 @@ if mode == "진행자 모드 (Host)":
             
             with col_ctrl1:
                 st.subheader("🎯 Quiz 진행 상태")
+                
+                # 비상 초기화 버튼 (언제든 대기 상태로 강제 전환)
+                if game["status"] != "waiting":
+                    if st.button("🔄 게임 강제 대기 상태로 리셋 (시작버튼 다시 복구)", help="게임 상태를 처음 대기 상태로 되돌립니다."):
+                        game["status"] = "waiting"
+                        game["curr_q"] = 0
+                        game["answers"] = {}
+                        st.success("게임이 대기 상태로 초기화되었습니다.")
+                        st.rerun()
+                    st.markdown("---")
+
                 if game["status"] == "waiting":
-                    st.info("게임 시작 전입니다. 문제를 등록하고 [게임 시작] 버튼을 눌러주세요.")
+                    st.info("게임 시작 전입니다. 문제를 확인하고 아래 [게임 시작] 버튼을 눌러주세요.")
                     if st.button("🚀 게임 시작하기", use_container_width=True):
                         if len(game["questions"]) == 0:
                             st.error("등록된 문제가 없습니다! '문제 관리 & 설정' 탭에서 문제를 추가해주세요.")
@@ -314,7 +314,7 @@ if mode == "진행자 모드 (Host)":
                     rank_df = pd.DataFrame([{"순위": idx + 1, "닉네임": k, "점수": f"{v}점"} for idx, (k, v) in enumerate(sorted_scores)])
                     st.dataframe(rank_df, use_container_width=True)
                     
-                    if st.button("🔄 새 게임 준비하기"):
+                    if st.button("🔄 새 게임 준비하기", use_container_width=True):
                         game["status"] = "waiting"
                         game["curr_q"] = 0
                         game["answers"] = {}
@@ -355,7 +355,7 @@ if mode == "진행자 모드 (Host)":
                     else:
                         df = pd.read_excel(up_file)
                     
-                    st.write("📋 **업로드 파일 미리보기 (화면 공유 보호: 정답 가림)**")
+                    st.write("📋 **업로드 파일 미리보기 (정답 보안 처리됨)**")
                     preview_df = df.copy()
                     if "정답" in preview_df.columns:
                         preview_df["정답"] = "🔒 [비공개]"
@@ -465,14 +465,12 @@ if mode == "진행자 모드 (Host)":
             else:
                 st.info("참가자가 없거나 아직 제출된 답안이 없습니다.")
 
-
 # ==========================================
 # 4. 참가자 모드 (PARTICIPANT MODE)
 # ==========================================
 else:
     st.title("🙋 참가자 모드 (Participant)")
     
-    # Participant Nickname Entry
     if "my_nickname" not in st.session_state:
         st.session_state["my_nickname"] = ""
         
@@ -505,7 +503,6 @@ else:
             
         st.markdown("---")
         
-        # Participant Game View
         if game["status"] == "waiting":
             st.info("⏳ 진행자가 게임을 시작하기를 기다리고 있습니다...")
             
@@ -532,13 +529,11 @@ else:
                 q_type = q_data["type"]
                 limit = q_data.get("timer") or (game["timer_sec_subj"] if q_type == "subjective" else game["timer_sec_obj"])
                 
-                # Dynamic timer calculation
                 elapsed = time.time() - game.get("q_start_time", time.time())
                 time_left = max(0, int(limit - elapsed))
                 
                 st.markdown(f"### Q{curr_q + 1}. {q_data['q']}")
                 
-                # Always render question options at the top for objective questions
                 if q_type == "objective" and q_data.get("options"):
                     st.markdown("**[보기]**")
                     for opt in q_data["options"]:
@@ -546,21 +541,17 @@ else:
                 
                 st.markdown("---")
                 
-                # Check previous submission for this question
                 q_answers = game["answers"].setdefault(curr_q, {})
                 prev_sub = q_answers.get(nickname, None)
                 
-                # Timer & Auto-Sync Fragment with auto-rerun on timeout or host change
                 @st.fragment(run_every="1s")
                 def participant_timer_fragment():
-                    # Check if host moved to next question or changed game status
                     if st.session_state.get("rendered_q") != game["curr_q"] or st.session_state.get("rendered_status") != game["status"]:
                         st.rerun()
 
                     e = time.time() - game.get("q_start_time", time.time())
                     t_left = max(0, int(limit - e))
                     
-                    # Force page rerun when time reaches 0 for state synchronization
                     if t_left == 0 and time_left > 0:
                         st.rerun()
 
@@ -569,12 +560,10 @@ else:
                 
                 t_left = participant_timer_fragment()
                 
-                # Display persistent status message
                 if prev_sub is not None:
                     disp_ans = ", ".join(prev_sub) if isinstance(prev_sub, list) else str(prev_sub)
                     st.success(f"✅ 제출된 답안: **{disp_ans}** (제출 완료 / 수정 가능)")
                 
-                # Answer submission form (Allow edit if time_left > 0)
                 if t_left > 0:
                     with st.form(key=f"answer_form_{curr_q}"):
                         if q_type == "objective":
@@ -588,7 +577,6 @@ else:
                                 default=default_vals
                             )
                         else:
-                            # Subjective text input
                             default_str = str(prev_sub) if prev_sub is not None else ""
                             user_ans = st.text_input("정답 입력:", value=default_str)
                             
