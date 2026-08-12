@@ -142,13 +142,25 @@ def process_questions_df(df):
                     if val:
                         options.append(val)
         
+        # 개별 제한시간 설정 확인
+        custom_timer = None
+        for t_col in ["제한시간", "제한시간(초)", "시간"]:
+            if t_col in row and pd.notna(row[t_col]):
+                try:
+                    custom_timer = int(row[t_col])
+                except:
+                    pass
+
         if q_text:
-            q_list.append({
+            q_dict = {
                 "q": q_text,
                 "type": "subjective" if "주관식" in q_type else "objective",
                 "options": options,
                 "ans": parsed_ans
-            })
+            }
+            if custom_timer and custom_timer > 0:
+                q_dict["timer"] = custom_timer
+            q_list.append(q_dict)
     return q_list
 
 # Helper: Calculate user score
@@ -253,7 +265,7 @@ if mode == "진행자 모드 (Host)":
                     
                     # Dynamic timer check
                     q_type = q_data["type"]
-                    limit = game["timer_sec_subj"] if q_type == "subjective" else game["timer_sec_obj"]
+                    limit = q_data.get("timer") or (game["timer_sec_subj"] if q_type == "subjective" else game["timer_sec_obj"])
                     elapsed = time.time() - game.get("q_start_time", time.time())
                     time_left = max(0, int(limit - elapsed))
                     
@@ -422,10 +434,13 @@ if mode == "진행자 모드 (Host)":
             if game["questions"]:
                 q_display = []
                 for idx, q in enumerate(game["questions"], start=1):
+                    def_time = game["timer_sec_subj"] if q["type"] == "subjective" else game["timer_sec_obj"]
+                    q_time = q.get("timer", f"{def_time} (기본값)")
                     q_display.append({
                         "번호": idx,
                         "문제": q["q"],
                         "유형": "주관식" if q["type"] == "subjective" else "객관식",
+                        "제한시간(초)": q_time,
                         "보기 수": len(q["options"]),
                         "정답": "🔒 [진행자 숨김]"
                     })
@@ -506,7 +521,7 @@ else:
             else:
                 q_data = game["questions"][curr_q]
                 q_type = q_data["type"]
-                limit = game["timer_sec_subj"] if q_type == "subjective" else game["timer_sec_obj"]
+                limit = q_data.get("timer") or (game["timer_sec_subj"] if q_type == "subjective" else game["timer_sec_obj"])
                 
                 # Dynamic timer calculation
                 elapsed = time.time() - game.get("q_start_time", time.time())
