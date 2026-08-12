@@ -435,23 +435,85 @@ if mode == "진행자 모드 (Host)":
                     st.error(f"파일을 읽는 중 오류가 발생했습니다: {e}")
 
             st.markdown("---")
-            st.subheader("📋 현재 등록된 문제 목록")
+            st.subheader("📋 현재 등록된 문제 목록 및 편집")
             if game["questions"]:
                 q_display = []
                 for idx, q in enumerate(game["questions"], start=1):
                     def_time = game["timer_sec_subj"] if q["type"] == "subjective" else game["timer_sec_obj"]
-                    q_time = q.get("timer", f"{def_time} (기본값)")
+                    q_time = q.get("timer", def_time)
+                    ans_show = ", ".join(q["ans"]) if isinstance(q["ans"], list) else str(q["ans"])
                     q_display.append({
                         "번호": idx,
                         "문제": q["q"],
                         "유형": "주관식" if q["type"] == "subjective" else "객관식",
                         "제한시간(초)": q_time,
                         "보기 수": len(q["options"]),
-                        "정답": "🔒 [진행자 숨김]"
+                        "정답": ans_show
                     })
                 st.dataframe(pd.DataFrame(q_display), use_container_width=True)
                 
-                if st.button("🗑️ 전체 문제 삭제"):
+                st.markdown("---")
+                st.subheader("✏️ 개별 문제 수정 및 삭제")
+                
+                q_indices = list(range(1, len(game["questions"]) + 1))
+                selected_num = st.selectbox("수정 또는 삭제할 문제 번호 선택", q_indices)
+                
+                if selected_num:
+                    target_idx = selected_num - 1
+                    target_q = game["questions"][target_idx]
+                    
+                    with st.expander(f"⚙️ Q{selected_num}번 문제 상세 수정", expanded=True):
+                        with st.form(key=f"edit_form_{target_idx}"):
+                            edit_q_text = st.text_input("문제 내용", value=target_q["q"])
+                            edit_type_str = st.radio(
+                                "문제 유형",
+                                ["객관식", "주관식"],
+                                index=0 if target_q["type"] == "objective" else 1,
+                                horizontal=True
+                            )
+                            
+                            def_t = game["timer_sec_subj"] if target_q["type"] == "subjective" else game["timer_sec_obj"]
+                            current_timer = target_q.get("timer", def_t)
+                            edit_timer = st.number_input("개별 제한시간 (초)", min_value=5, max_value=300, value=int(current_timer))
+                            
+                            edit_options = []
+                            if edit_type_str == "객관식":
+                                st.write("**보기 설정 (객관식)**")
+                                opts = target_q.get("options", [])
+                                opt1 = st.text_input("보기 1", value=opts[0] if len(opts) > 0 else "")
+                                opt2 = st.text_input("보기 2", value=opts[1] if len(opts) > 1 else "")
+                                opt3 = st.text_input("보기 3", value=opts[2] if len(opts) > 2 else "")
+                                opt4 = st.text_input("보기 4", value=opts[3] if len(opts) > 3 else "")
+                                opt5 = st.text_input("보기 5 (선택)", value=opts[4] if len(opts) > 4 else "")
+                                
+                                for o in [opt1, opt2, opt3, opt4, opt5]:
+                                    if o.strip():
+                                        edit_options.append(o.strip())
+                            
+                            ans_str = ", ".join(target_q["ans"]) if isinstance(target_q["ans"], list) else str(target_q["ans"])
+                            edit_ans_raw = st.text_input("정답 (객관식은 보기 번호 예: 1 또는 1,2 / 주관식은 단어)", value=ans_str)
+                            
+                            save_btn = st.form_submit_button("💾 수정사항 저장", use_container_width=True)
+                            
+                            if save_btn:
+                                parsed_ans = parse_correct_answers(edit_ans_raw)
+                                game["questions"][target_idx] = {
+                                    "q": edit_q_text.strip(),
+                                    "type": "subjective" if edit_type_str == "주관식" else "objective",
+                                    "options": edit_options if edit_type_str == "객관식" else [],
+                                    "ans": parsed_ans,
+                                    "timer": int(edit_timer)
+                                }
+                                st.success(f"Q{selected_num}번 문제가 수정되었습니다!")
+                                st.rerun()
+
+                        if st.button(f"🗑️ Q{selected_num}번 문제 개별 삭제", use_container_width=True):
+                            game["questions"].pop(target_idx)
+                            st.success(f"Q{selected_num}번 문제가 삭제되었습니다.")
+                            st.rerun()
+
+                st.markdown("---")
+                if st.button("🗑️ 전체 문제 일괄 삭제"):
                     game["questions"] = []
                     st.rerun()
             else:
