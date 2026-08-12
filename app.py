@@ -8,87 +8,90 @@ from google import genai
 st.set_page_config(page_title="라이브 퀴즈 챌린지 🌸", layout="wide")
 
 # ---------------------------------------------------------
-# 🎨 화사한 파스텔 핑크 테마 Custom CSS 적용
+# 🎨 눈이 편안한 은은한 소프트 파스텔 테마 (Custom CSS)
 # ---------------------------------------------------------
 st.markdown("""
     <style>
-    /* 1. 전체 앱 메인 배경색 (소프트 파스텔 핑크) */
+    /* 1. 전체 메인 배경 (눈부심 없는 은은한 크림 핑크) */
     .stApp {
-        background-color: #FFF5F7;
-        color: #4A2E35;
+        background-color: #FAF5F6 !important;
+        color: #4A3A3E !important;
     }
     
-    /* 2. 사이드바 디자인 (블러쉬 핑크) */
+    /* 2. 사이드바 (소프트 파스텔 블러쉬) */
     [data-testid="stSidebar"] {
-        background-color: #FCE4EC !important;
-        border-right: 1px solid #F8BBD0;
+        background-color: #F5EBEF !important;
+        border-right: 1px solid #EADBDF !important;
     }
     
-    /* 3. 메인 제목 및 섹션 헤더 글자색 (딥 로즈) */
-    h1, h2, h3, h4, h5, h6, .stText {
-        color: #880E4F !important;
-        font-family: 'Pretendard', sans-serif;
+    /* 3. 제목 및 헤더 텍스트 (자극 없는 차분한 브라운 로즈) */
+    h1, h2, h3, h4, h5, h6, .stText, p, label {
+        color: #523E43 !important;
+        font-family: 'Pretendard', -apple-system, sans-serif;
     }
     
-    /* 4. 기본 버튼 스타일 (파스텔 로즈 핑크) */
+    /* 4. 버튼 스타일 (차분한 인디핑크 / 더스티 로즈) */
     .stButton > button {
-        background-color: #FFC1CC !important;
-        color: #5A1827 !important;
-        border-radius: 15px !important;
-        border: 2px solid #FF9EAA !important;
-        font-weight: bold !important;
-        font-size: 16px !important;
-        padding: 10px 20px !important;
-        box-shadow: 0px 4px 10px rgba(255, 182, 193, 0.4);
-        transition: all 0.3s ease !important;
+        background-color: #EED7DC !important;
+        color: #4A3A3E !important;
+        border-radius: 12px !important;
+        border: 1px solid #DFBFC7 !important;
+        font-weight: 600 !important;
+        font-size: 15px !important;
+        padding: 8px 18px !important;
+        box-shadow: 0px 2px 5px rgba(0, 0, 0, 0.02) !important;
+        transition: all 0.2s ease-in-out !important;
     }
     
     /* 버튼에 마우스 올렸을 때 */
     .stButton > button:hover {
-        background-color: #FF80BF !important;
-        color: #FFFFFF !important;
-        border-color: #FF4D94 !important;
-        transform: translateY(-2px);
+        background-color: #E2C2CA !important;
+        color: #332427 !important;
+        border-color: #D4A8B3 !important;
+        transform: translateY(-1px);
     }
     
-    /* 5. 입력창, 텍스트 에어리어 스타일 */
-    .stTextInput > div > div > input, .stTextArea > div > div > textarea, .stNumberInput > div > div > input {
+    /* 5. 입력창 및 텍스트 상자 */
+    .stTextInput > div > div > input, 
+    .stTextArea > div > div > textarea, 
+    .stNumberInput > div > div > input {
         background-color: #FFFFFF !important;
-        border: 2px solid #F8BBD0 !important;
-        border-radius: 12px !important;
-        color: #4A2E35 !important;
+        border: 1px solid #E5D5D9 !important;
+        border-radius: 10px !important;
+        color: #4A3A3E !important;
     }
     
-    .stTextInput > div > div > input:focus, .stTextArea > div > div > textarea:focus {
-        border-color: #FF69B4 !important;
-        box-shadow: 0 0 8px rgba(255, 105, 180, 0.3) !important;
+    .stTextInput > div > div > input:focus, 
+    .stTextArea > div > div > textarea:focus {
+        border-color: #DCA2B0 !important;
+        box-shadow: 0 0 6px rgba(220, 162, 176, 0.25) !important;
     }
 
-    /* 6. 알림/안내 상자 (Success, Info, Warning, Error) 핑크 톤 커스텀 */
+    /* 6. 알림 상자 (부드러운 디자인) */
     .stAlert {
-        border-radius: 15px !important;
-        border: none !important;
-        box-shadow: 0px 3px 8px rgba(0,0,0,0.05);
+        border-radius: 12px !important;
+        border: 1px solid #F0E2E5 !important;
+        background-color: #FFFFFF !important;
     }
     
-    /* 7. 프로그레스 바 (타이머) 칼라 */
+    /* 7. 제한시간 프로그레스 바 (은은한 로즈) */
     .stProgress > div > div > div > div {
-        background-color: #FF69B4 !important;
+        background-color: #D89BAA !important;
     }
 
     /* 8. 탭 디자인 */
     .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
+        gap: 6px;
     }
     .stTabs [data-baseweb="tab"] {
-        border-radius: 10px 10px 0px 0px;
-        padding: 8px 16px;
-        background-color: #FFE4E1;
-        color: #880E4F;
+        border-radius: 8px 8px 0px 0px;
+        padding: 8px 14px;
+        background-color: #F2E6E9;
+        color: #634C52;
     }
     .stTabs [aria-selected="true"] {
-        background-color: #FFB6C1 !important;
-        color: #5A1827 !important;
+        background-color: #E8CCD3 !important;
+        color: #4A3A3E !important;
         font-weight: bold;
     }
     </style>
