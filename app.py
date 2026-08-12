@@ -391,6 +391,11 @@ if mode == "진행자 모드 (Host)":
                 if game["participants"]:
                     for idx, p in enumerate(game["participants"], start=1):
                         st.write(f"{idx}. **{p}**")
+                    st.markdown("---")
+                    if st.button("🧹 참가자 목록 초기화", use_container_width=True):
+                        game["participants"] = []
+                        st.success("참가자 목록이 초기화되었습니다.")
+                        st.rerun()
                 else:
                     st.caption("아직 참가자가 없습니다.")
 
