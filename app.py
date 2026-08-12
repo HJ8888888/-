@@ -4,7 +4,95 @@ import time
 import os
 from google import genai
 
-st.set_page_config(page_title="라이브 퀴즈 챌린지", layout="wide")
+# 페이지 설정
+st.set_page_config(page_title="라이브 퀴즈 챌린지 🌸", layout="wide")
+
+# ---------------------------------------------------------
+# 🎨 화사한 파스텔 핑크 테마 Custom CSS 적용
+# ---------------------------------------------------------
+st.markdown("""
+    <style>
+    /* 1. 전체 앱 메인 배경색 (소프트 파스텔 핑크) */
+    .stApp {
+        background-color: #FFF5F7;
+        color: #4A2E35;
+    }
+    
+    /* 2. 사이드바 디자인 (블러쉬 핑크) */
+    [data-testid="stSidebar"] {
+        background-color: #FCE4EC !important;
+        border-right: 1px solid #F8BBD0;
+    }
+    
+    /* 3. 메인 제목 및 섹션 헤더 글자색 (딥 로즈) */
+    h1, h2, h3, h4, h5, h6, .stText {
+        color: #880E4F !important;
+        font-family: 'Pretendard', sans-serif;
+    }
+    
+    /* 4. 기본 버튼 스타일 (파스텔 로즈 핑크) */
+    .stButton > button {
+        background-color: #FFC1CC !important;
+        color: #5A1827 !important;
+        border-radius: 15px !important;
+        border: 2px solid #FF9EAA !important;
+        font-weight: bold !important;
+        font-size: 16px !important;
+        padding: 10px 20px !important;
+        box-shadow: 0px 4px 10px rgba(255, 182, 193, 0.4);
+        transition: all 0.3s ease !important;
+    }
+    
+    /* 버튼에 마우스 올렸을 때 */
+    .stButton > button:hover {
+        background-color: #FF80BF !important;
+        color: #FFFFFF !important;
+        border-color: #FF4D94 !important;
+        transform: translateY(-2px);
+    }
+    
+    /* 5. 입력창, 텍스트 에어리어 스타일 */
+    .stTextInput > div > div > input, .stTextArea > div > div > textarea, .stNumberInput > div > div > input {
+        background-color: #FFFFFF !important;
+        border: 2px solid #F8BBD0 !important;
+        border-radius: 12px !important;
+        color: #4A2E35 !important;
+    }
+    
+    .stTextInput > div > div > input:focus, .stTextArea > div > div > textarea:focus {
+        border-color: #FF69B4 !important;
+        box-shadow: 0 0 8px rgba(255, 105, 180, 0.3) !important;
+    }
+
+    /* 6. 알림/안내 상자 (Success, Info, Warning, Error) 핑크 톤 커스텀 */
+    .stAlert {
+        border-radius: 15px !important;
+        border: none !important;
+        box-shadow: 0px 3px 8px rgba(0,0,0,0.05);
+    }
+    
+    /* 7. 프로그레스 바 (타이머) 칼라 */
+    .stProgress > div > div > div > div {
+        background-color: #FF69B4 !important;
+    }
+
+    /* 8. 탭 디자인 */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        border-radius: 10px 10px 0px 0px;
+        padding: 8px 16px;
+        background-color: #FFE4E1;
+        color: #880E4F;
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: #FFB6C1 !important;
+        color: #5A1827 !important;
+        font-weight: bold;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
 # ---------------------------------------------------------
 # 🔑 진행자 전용 비밀번호 설정
@@ -91,7 +179,7 @@ if role == "🎙️ 진행자 (Host)":
         st.warning("진행자 비밀번호가 올바르지 않습니다. 왼쪽 사이드바에서 비밀번호를 입력해주세요!")
         st.info("💡 일반 참가자분들은 사이드바에서 **'📱 참가자 (User)'** 모드를 선택해 주시기 바랍니다.")
     else:
-        st.title("🎙️ 진행자 라이브 제어판")
+        st.title("🎙️ 진행자 라이브 제어판 🌸")
         
         # 제한 시간 설정
         game["timer_sec"] = st.number_input("⏱️ 문제당 제한 시간(초)을 설정하세요:", min_value=5, max_value=120, value=15, step=5)
@@ -217,7 +305,7 @@ if role == "🎙️ 진행자 (Host)":
                         st.rerun()
 
             with col2:
-                if st.button("🔄 접속자 & 게임 전체 초기화", type="secondary", use_container_width=True):
+                if st.button("🔄 접속자 & 게임 전체 초기화", use_container_width=True):
                     game["status"] = "waiting"
                     game["current_question"] = 0
                     game["answers"] = {}
@@ -255,7 +343,7 @@ if role == "🎙️ 진행자 (Host)":
 
             elif game["status"] == "ended":
                 st.divider()
-                st.header("🏆 전체 참가자 최종 순위 리더보드")
+                st.header("🏆 전체 참가자 최종 순위 리더보드 👑")
                 if game["scores"]:
                     # 참가자 전체 순위 출력 (전체 정렬)
                     sorted_scores = sorted(game["scores"].items(), key=lambda x: x[1], reverse=True)
@@ -269,7 +357,7 @@ if role == "🎙️ 진행자 (Host)":
 # 📱 참가자 (Participant) 화면
 # ---------------------------------------------------------
 else:
-    st.title("📱 라이브 퀴즈 참가하기")
+    st.title("📱 라이브 퀴즈 참가하기 💖")
     nickname = st.text_input("사용할 닉네임을 입력하세요", key="user_nick")
     
     if nickname:
@@ -317,7 +405,7 @@ else:
                 st.balloons()
                 st.success("🎉 모든 퀴즈가 종료되었습니다!")
                 st.divider()
-                st.subheader("🏆 전체 참가자 최종 순위")
+                st.subheader("🏆 전체 참가자 최종 순위 👑")
                 if game["scores"]:
                     # 참가자 전체 순위 출력 (전체 정렬)
                     sorted_scores = sorted(game["scores"].items(), key=lambda x: x[1], reverse=True)
